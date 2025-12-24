@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from '@supabase/supabase-js';
+
 import {
   Volume2,
   VolumeX,
@@ -69,6 +70,7 @@ export default function App() {
   const [guestMessages, setGuestMessages] = useState([]);
   const [nameInput, setNameInput] = useState("");
   const [msgInput, setMsgInput] = useState("");
+  const [showNotif, setShowNotif] = useState(false);
 
   const audioRef = useRef(new Audio("/MUSIC/AUDIO.mp3"));
   const videoSectionRef = useRef(null);
@@ -90,31 +92,46 @@ export default function App() {
     }
   };
 
+
   useEffect(() => {
-    fetchMessages();
-    const subscription = supabase
-      .channel('public:guestbook')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'supridata' }, () => {
-        fetchMessages();
-      })
-      .subscribe();
-    return () => supabase.removeChannel(subscription);
-  }, []);
+  fetchMessages();
+
+  // Membuka jalur komunikasi real-time
+  const channel = supabase
+    .channel('perubahan-data')
+    .on(
+      'postgres_changes', 
+      { event: '*', schema: 'public', table: 'supridata' }, 
+      (payload) => {
+        console.log('Ada data baru masuk!', payload);
+        fetchMessages(); // Ambil ulang data secara otomatis
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
   // 2. Fungsi Kirim Pesan
   const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!nameInput.trim() || !msgInput.trim()) return;
+  e.preventDefault();
+  if (!nameInput.trim() || !msgInput.trim()) return;
 
-    const { error } = await supabase
-      .from('supridata')
-      .insert([{ name: nameInput, message: msgInput }]);
+  const { error } = await supabase
+    .from('supridata')
+    .insert([{ name: nameInput, message: msgInput }]);
 
-    if (!error) {
-      setNameInput("");
-      setMsgInput("");
-    }
-  };
+  if (!error) {
+    setNameInput("");
+    setMsgInput("");
+    
+    // Munculkan notifikasi pop-up selama 3 detik
+    setShowNotif(true);
+    setTimeout(() => setShowNotif(false), 3000);
+  }
+};
 
   // 3. Fungsi Hapus
   const deleteMessage = async (id) => {
@@ -155,6 +172,18 @@ export default function App() {
 
   return (
     <div className="text-white min-h-screen font-sans selection:bg-purple-500 overflow-x-hidden">
+      <AnimatePresence>
+      {showNotif && (
+        <motion.div
+          initial={{ opacity: 0, y: -50, x: "-50%" }}
+          animate={{ opacity: 1, y: 20, x: "-50%" }}
+          exit={{ opacity: 0, y: -50, x: "-50%" }}
+          className="fixed top-0 left-1/2 z-[200] bg-[#EEA727] text-black px-6 py-3 rounded-2xl font-bold shadow-2xl border-2 border-white flex items-center gap-3"
+        >
+          <span>🚀 Pesan Terkirim, Anjayy!</span>
+        </motion.div>
+      )}
+    </AnimatePresence>
       
       {/* 1. LAYER BACKGROUND DINAMIS */}
       <div
@@ -329,50 +358,58 @@ export default function App() {
     </form>
   </motion.div>
 
-  {/* DAFTAR REAKSI MELAYANG (DI LUAR KOTAK INPUT) */}
-  <div className="max-w-4xl mx-auto mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <AnimatePresence initial={false}>
-      {guestMessages.map((item) => (
-        <motion.div 
-          key={item.id}
-          initial={{ opacity: 0, scale: 0.8, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
-          whileHover={{ y: -5, transition: { duration: 0.2 } }}
-          className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-2xl shadow-xl flex flex-col gap-2 relative group overflow-hidden"
-          style={{ 
-            boxShadow: '0 10px 30px -10px rgba(238, 167, 39, 0.2)'
-          }}
-        >
-          {/* Aksen Emas Melayang */}
-          <div className="absolute top-0 left-0 w-1 h-full bg-[#EEA727] opacity-50" />
-          
-          <div className="flex justify-between items-start">
-            <div className="flex flex-col">
-              <span className="text-[11px] font-black text-[#EEA727] tracking-wider uppercase">
-                @{item.name}
-              </span>
-              <span className="text-[9px] opacity-30 italic text-white">
-                {item.date}
-              </span>
-            </div>
-            <Heart size={14} className="text-[#EEA727] opacity-20 group-hover:opacity-100 transition-opacity" />
-          </div>
-          
-          <p className="text-sm opacity-90 leading-relaxed font-medium text-white italic">
-            "{item.message}"
-          </p>
+ {/* --- SECTION: BUKU TAMU TERBARU (MARQUEE PANJANG TANPA ICON HAPUS) --- */}
+<div className="mt-12 relative overflow-hidden w-full py-10">
+  {/* Gradient pemudar agar ujung kiri-kanan smooth */}
+  <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-transparent to-transparent z-10 pointer-events-none" />
+  <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-transparent to-transparent z-10 pointer-events-none" />
 
-          {/* Animasi Partikel Kecil (Opsional) */}
-          <motion.div 
-            animate={{ y: [0, -10, 0] }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            className="absolute -right-2 -bottom-2 w-12 h-12 bg-[#EEA727]/5 blur-xl rounded-full"
-          />
-        </motion.div>
-      ))}
-    </AnimatePresence>
-  </div>
+  <motion.div 
+    className="flex gap-6 w-max px-4"
+    animate={{ x: ["0%", "-50%"] }} 
+    transition={{ 
+      ease: "linear", 
+      duration: 50, // Angka lebih besar = jalan lebih lambat & smooth
+      repeat: Infinity 
+    }}
+  >
+    {/* Kita render data 4 kali supaya barisnya jadi sangat panjang dan tidak ada jeda kosong */}
+    {[...guestMessages, ...guestMessages, ...guestMessages, ...guestMessages].map((item, index) => (
+      <motion.div 
+        key={`${item.id}-${index}`}
+        whileHover={{ y: -8, scale: 1.02 }}
+        className="bg-white/10 backdrop-blur-xl border border-white/20 p-6 rounded-3xl shadow-2xl min-w-[300px] max-w-[320px] relative overflow-hidden group"
+        style={{ boxShadow: '0 20px 40px -15px rgba(238, 167, 39, 0.2)' }}
+      >
+        {/* Aksen Emas di Samping */}
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-[#EEA727] opacity-60" />
+        
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex flex-col">
+            <span className="text-[13px] font-black text-[#EEA727] uppercase tracking-wider">
+              @{item.name}
+            </span>
+            <span className="text-[10px] opacity-40 italic text-white">
+              {item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID') : 'Baru saja'}
+            </span>
+          </div>
+          <Heart size={16} className="text-[#EEA727] opacity-20" />
+        </div>
+        
+        <p className="text-sm opacity-90 leading-relaxed font-medium text-white italic">
+          "{item.message}"
+        </p>
+
+        {/* Efek Kilau Cahaya yang terus bergerak pelan di dalam kartu */}
+        <motion.div 
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent z-[-1]"
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+        />
+      </motion.div>
+    ))}
+  </motion.div>
+</div>
 </section>
             </main>
 
